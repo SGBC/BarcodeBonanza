@@ -12,16 +12,109 @@ Whenever the pipeline will be complete and the authors statisfied with all the i
 
 The Dada2 tutorial can be found [here](http://benjjneb.github.io/dada2/tutorial.html).
 
-## Before starting
+## Before Starting
 
 It is assumed that you have Dada2 installed on your machine.
 If you don't, please follow the [installation instructions](http://benjjneb.github.io/dada2/dada-installation.html)
 
 You will also need to download the data:
 
-```{bash download}
+```{bash download, results='hide'}
 wget http://www.mothur.org/w/images/d/d6/MiSeqSOPData.zip
 unzip MiSeqSOPData.zip
 rm -r __MACOSX/
 ```
 
+## Getting Started
+
+Check that you have Dada2 installed:
+
+```{r check_install}
+library(dada2)
+packageVersion("dada2")
+```
+
+Check that you have downloaded the data:
+
+```{r check_data}
+path <- "MiSeq_SOP"
+list.files(path)
+```
+
+## Filtering and Trimming
+
+First we create two lists with the sorted name of the reads: one for the forward reads, one for the reverse reads
+
+```{r names}
+raw_forward <- sort(list.files(
+    path,
+    pattern = "_R1_001.fastq",
+    full.names = TRUE))
+
+raw_reverse <- sort(list.files(
+    path,
+    pattern = "_R2_001.fastq",
+    full.names = TRUE))
+
+# we also need the sample names
+sample_names <- sapply(
+    strsplit(basename(raw_forward), "_"),
+    `[`,  # extracts the first element of a subset
+    1)
+```
+
+then we visualise the quality of our reads
+
+```{r base_quality}
+plotQualityProfile(raw_forward[1:2])
+plotQualityProfile(raw_reverse[1:2])
+```
+
+The forward reads are good quality (although dropping a bit at the end as usual) while the reverse are way worse.
+
+Based on these profiles, we will truncate the forward reads at position 240 and the reverse reads at position 160 where the quality distribution crashes.
+
+---
+
+*Note: in this tutorial we perform the trimming using Dada2's own functions.*
+*There is a big likelihood we'll do do that outside of R using [sickle](https://github.com/najoshi/sickle)*
+
+---
+
+Dada2 requires us to define the name of our output files:
+
+```{r trimming_1}
+# place filtered files in filtered/ subdirectory
+filtered_path <- file.path(path, "filtered") 
+
+filtered_forward <- file.path(
+    filtered_path,
+    paste0(sample_names, "_F_filt.fastq.gz"))
+
+filtered_reverse <- file.path(
+    filtered_path,
+    paste0(sample_names, "_R_filt.fastq.gz"))
+```
+
+We’ll use standard filtering parameters: maxN=0 (Dada2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2.
+The maxEE parameter sets the maximum number of “expected errors” allowed in a read, which [according to the USEARCH authors](http://www.drive5.com/usearch/manual/expected_errors.html) is a better filter than simply averaging quality scores.
+
+```{r trimming_2}
+out <- filterAndTrim(
+    raw_forward,
+    filtered_forward,
+    raw_reverse,
+    filtered_reverse,
+    truncLen=c(240,160),
+    maxN=0,
+    maxEE=c(2,2),
+    truncQ=2,
+    rm.phix=TRUE,
+    compress=TRUE,
+    multithread=TRUE)
+head(out)
+```
+
+## Learn the Error Rates
+
+*TODO*
