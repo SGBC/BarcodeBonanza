@@ -1,0 +1,27 @@
+---
+title: "Dada2 pipeline"
+author: "Hadrien Gourlé"
+output: html_document
+---
+
+This document is aimed at being a walkthrough of the DADA2 pipeline.
+It uses the data of the now famous [MiSeq SOP](http://www.mothur.org/wiki/MiSeq_SOP) by the Mothur authors but analyses the data using Dada2.
+
+This document is a work in progress.
+Whenever the pipeline will be complete and the authors statisfied with all the individual steps of the pipeline, it will be transformed into an automated workflow for routine metabarcoding for the SLUBI platform at [SLU](https://www.slu.se).
+
+The Dada2 tutorial can be found [here](http://benjjneb.github.io/dada2/tutorial.html).
+
+## Before starting
+
+It is assumed that you have Dada2 installed on your machine.
+If you don't, please follow the [installation instructions](http://benjjneb.github.io/dada2/dada-installation.html)
+
+You will also need to download the data:
+
+```{bash download}
+wget http://www.mothur.org/w/images/d/d6/MiSeqSOPData.zip
+unzip MiSeqSOPData.zip
+rm -r __MACOSX/
+```
+
