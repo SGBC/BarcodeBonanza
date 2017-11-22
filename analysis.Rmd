@@ -1,11 +1,11 @@
 ---
-title: "Dada2 pipeline"
+title: "DADA2 pipeline"
 author: "Hadrien Gourlé"
 output: html_document
 ---
 
-This document is aimed at being a walkthrough of the DADA2 pipeline.
-It uses the data of the now famous [MiSeq SOP](http://www.mothur.org/wiki/MiSeq_SOP) by the Mothur authors but analyses the data using Dada2.
+This tutorial is aimed at being a walkthrough of the DADA2 pipeline.
+It uses the data of the now famous [MiSeq SOP](http://www.mothur.org/wiki/MiSeq_SOP) by the Mothur authors but analyses the data using DADA2.
 
 This document is a work in progress.
 Whenever the pipeline will be complete and the authors statisfied with all the individual steps of the pipeline, it will be transformed into an automated workflow for routine metabarcoding for the SLUBI platform at [SLU](https://www.slu.se).
@@ -36,6 +36,11 @@ Check that you have Dada2 installed:
 
 ```{r check_install}
 library(dada2)
+library(phyloseq)
+library(ggsci)
+library(ggplot2)
+library(phangorn)
+library(DECIPHER)
 packageVersion("dada2")
 ```
 
@@ -118,7 +123,8 @@ errors_reverse <- learnErrors(filtered_reverse, multithread=TRUE)
 then we visualise the estimated error rates
 
 ```{r vis_error}
-plotErrors(errors_forward, nominalQ=TRUE)
+plotErrors(errors_forward, nominalQ=TRUE) +
+    theme_minimal()
 ```
 
 ## Dereplication
@@ -221,7 +227,110 @@ taxa_print <- taxa # Removing sequence rownames for display only
 rownames(taxa_print) <- NULL
 head(taxa_print)
 ```
+### Phylogenetic tree
+
+Dadad2 is reference free so we have to build the tree ourselves
+
+```{r align}
+sequences <- getSequences(seq_table)
+names(sequences) <- sequences # This propagates to the tip labels of the tree
+alignment <- AlignSeqs(DNAStringSet(sequences), anchor=NA)
+```
+
+*TODO* tree
+
+```{r}
+phang_align <- phyDat(as(alignment, "matrix"), type="DNA")
+dm <- dist.ml(phang_align)
+treeNJ <- NJ(dm) # Note, tip order != sequence order
+fit = pml(treeNJ, data=phang_align)
+
+## negative edges length changed to 0!
+
+fitGTR <- update(fit, k=4, inv=0.2)
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+                    rearrangement = "stochastic",
+                    control = pml.control(trace = 0))
+detach("package:phangorn", unload=TRUE)
+```
+
 
 ## Phyloseq
 
-*TODO*
+In the case of the MiSeq SOP the metadat are stored in the sample names.
+Therefore we have a bit of parsin to do. Normally we'd read those from a file
+
+```{r prep_phyloseq}
+sample_names <- rownames(seq_table_nochim)
+subject <- sapply(strsplit(sample_names, "D"), `[`, 1)
+
+sex <- substr(subject,1,1)
+subject <- substr(subject,2,999)
+day <- as.integer(sapply(strsplit(sample_names, "D"), `[`, 2))
+
+sample_data <- data.frame(Subject = subject, Sex = sex, Day = day)
+sample_data$When <- "Early"
+sample_data$When[sample_data$Day>100] <- "Late"
+rownames(sample_data) <- sample_names
+```
+
+
+we can now construct a phyloseq object from our output and newly created metadata
+
+```{r load_phyloseq_data}
+ps <- phyloseq(otu_table(seq_table_nochim, taxa_are_rows=FALSE), 
+               sample_data(sample_data), 
+               tax_table(taxa),
+               phy_tree(fitGTR$tree))
+ps <- prune_samples(sample_names(ps) != "Mock", ps)  # remove mock sample
+ps
+```
+
+A reminder of the metadata
+
+```{r metadata}
+sample_data
+```
+
+Let's look at the alpha diversity of our samples
+
+```{r alpha}
+plot_richness(ps, x="Day", measures=c("Shannon", "Fisher"), color="When") + theme_minimal()
+```
+
+No obvious differences. Let's look at ordination
+
+We can perform an MDS with eucliean distance (mathematically equivalent to a PCA)
+
+```{r pca}
+ord <- ordinate(ps, "MDS", "euclidean")
+plot_ordination(ps, ord, type="samples", color="When",
+                title="PCA of the samples from the MiSeq SOP") +
+    theme_minimal()
+```
+
+```{r bray}
+ord <- ordinate(ps, "NMDS", "bray")
+plot_ordination(ps, ord, type="samples", color="When",
+                title="PCA of the samples from the MiSeq SOP") +
+    theme_minimal()
+```
+
+There we can see a clear difference between our samples.
+
+```{r bar}
+top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+ps_top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
+ps_top20 <- prune_taxa(top20, ps_top20)
+plot_bar(ps_top20, x="Day", fill="Family") +
+    facet_wrap(~When, scales="free_x") +
+    scale_fill_lancet(alpha = 0.6) +
+    theme_minimal()
+```
+
+```{r}
+p1 = subset_taxa(ps, Phylum %in% c("Bacteroidetes"))
+plot_tree(p1, ladderize="left", size="abundance",
+          color="When", label.tips="Family")
+```
+
